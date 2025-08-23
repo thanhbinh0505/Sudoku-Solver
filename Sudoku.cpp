@@ -24,6 +24,7 @@ const int GAP = 16;
 static int board[GRID_SIZE][GRID_SIZE] = { 0 };
 static bool isGiven[GRID_SIZE][GRID_SIZE] = { false };      // given before solve (or after snapshot)
 static bool isSolvedCell[GRID_SIZE][GRID_SIZE] = { false }; // filled by solver
+static bool conflict[GRID_SIZE][GRID_SIZE] = { false };     // true if cell conflicts with another
 static int selectedRow = -1, selectedCol = -1;
 
 LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
@@ -180,6 +181,50 @@ bool SolveSudokuDLX(const int input[9][9], int result[9][9]) {
 // ---------------- end DLX ----------------
 
 
+// ---------- Conflict detection ----------
+void UpdateConflicts() {
+    // reset
+    for (int r=0;r<GRID_SIZE;r++) for (int c=0;c<GRID_SIZE;c++) conflict[r][c] = false;
+
+    // for every pair of cells, if values equal and non-zero and different positions in same row/col/box => mark both conflicted
+    for (int r=0;r<GRID_SIZE;r++) {
+        for (int c=0;c<GRID_SIZE;c++) {
+            int v = board[r][c];
+            if (v == 0) continue;
+            // check row
+            for (int cc=0; cc<GRID_SIZE; cc++) {
+                if (cc == c) continue;
+                if (board[r][cc] == v) {
+                    conflict[r][c] = true;
+                    conflict[r][cc] = true;
+                }
+            }
+            // check col
+            for (int rr=0; rr<GRID_SIZE; rr++) {
+                if (rr == r) continue;
+                if (board[rr][c] == v) {
+                    conflict[r][c] = true;
+                    conflict[rr][c] = true;
+                }
+            }
+            // check box
+            int br = (r/3)*3;
+            int bc = (c/3)*3;
+            for (int rr = br; rr < br+3; rr++) {
+                for (int cc = bc; cc < bc+3; cc++) {
+                    if (rr==r && cc==c) continue;
+                    if (board[rr][cc] == v) {
+                        conflict[r][c] = true;
+                        conflict[rr][cc] = true;
+                    }
+                }
+            }
+        }
+    }
+}
+// ---------- end conflict detection ----------
+
+
 // Draw board: paint highlight FIRST (fill cell), then draw lines (so borders remain visible), then numbers.
 void DrawBoard(HWND /*hwnd*/, HDC hdc) {
     int startX = MARGIN;
@@ -225,6 +270,9 @@ void DrawBoard(HWND /*hwnd*/, HDC hdc) {
         DeleteObject(penH);
     }
 
+    // Update conflicts based on current board
+    UpdateConflicts();
+
     // Prepare font scaled to cell
     int fontHeight = CELL_SIZE * 3 / 5; // ~60% of cell height
     HFONT hFont = CreateFontA(-fontHeight, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
@@ -244,9 +292,16 @@ void DrawBoard(HWND /*hwnd*/, HDC hdc) {
                 startX + (c+1)*CELL_SIZE,
                 startY + (r+1)*CELL_SIZE
             };
-            if (isGiven[r][c]) SetTextColor(hdc, RGB(0,0,0));
-            else if (isSolvedCell[r][c]) SetTextColor(hdc, RGB(120,120,120));
-            else SetTextColor(hdc, RGB(20,90,200));
+
+            // Conflict override: if conflict -> red
+            if (conflict[r][c]) {
+                SetTextColor(hdc, RGB(200,0,0));
+            } else {
+                if (isGiven[r][c]) SetTextColor(hdc, RGB(0,0,0));
+                else if (isSolvedCell[r][c]) SetTextColor(hdc, RGB(120,120,120));
+                else SetTextColor(hdc, RGB(20,90,200));
+            }
+
             std::string s = std::to_string(v);
             DrawTextA(hdc, s.c_str(), -1, &cell, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
@@ -301,6 +356,7 @@ void DoClear(HWND hwnd) {
         board[r][c] = 0;
         isGiven[r][c] = false;
         isSolvedCell[r][c] = false;
+        conflict[r][c] = false;
     }
     selectedRow = selectedCol = -1;
     InvalidateRect(hwnd, NULL, TRUE);
@@ -389,6 +445,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 board[selectedRow][selectedCol] = 0;
                 isGiven[selectedRow][selectedCol] = false;
                 isSolvedCell[selectedRow][selectedCol] = false;
+                conflict[selectedRow][selectedCol] = false;
                 needInvalidate = true;
                 break;
             // NumPad digits
