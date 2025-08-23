@@ -1,0 +1,7 @@
+// Compile with Microsoft Visual C++ (MSVC)
+rc /r sudoku.rc
+cl /EHsc sudoku.cpp sudoku.res user32.lib gdi32.lib
+
+// Compile with MinGW (g++)
+windres sudoku.rc -O coff -o sudoku.o
+g++ sudoku.cpp sudoku.o -luser32 -lgdi32 -mwindows -o sudoku.exe -static -static-libgcc -static-libstdc++ -pthread
